@@ -1,130 +1,105 @@
-from pptx import Presentation
-from pptx.chart.data import CategoryChartData
-from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION
-import pandas as pd
-from openai import OpenAI
+import os
+import uuid
+from io import BytesIO
 
-from models import BarChartDataStructure, SelectedChartType
+import uvicorn
+from fastapi import FastAPI, UploadFile, HTTPException, Form, BackgroundTasks
+from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
-client = OpenAI()
+import pptservice
+import aiofiles
 
-CHART_CORE_MESSAGE = "China is the most important ice cream market in 2029"
-DATA_PATH = "./salesdata_single_row_header.xlsx"
-TEMPLATE_PATH = "./template.pptx"
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+SERVICE_ACCOUNT_FILE = "./google-drive-api-key.json"
+
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+credentials = Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
+drive_service = build('drive', 'v3', credentials=credentials)
 
 
-# Query and mock responses
+def upload_to_google_drive(file_path: str, mime_type: str, file_name: str):
+    """Uploads a file to Google Drive."""
+    file_metadata = {'name': file_name}
+    media = MediaFileUpload(file_path, mimetype=mime_type)
+    file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+    return file.get('id')
 
-def _query_openai(message, response_model=None):
-    if response_model is None:
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": message
-                }
-            ]
+
+@app.get("/example-excel")
+async def get_example_excel():
+    try:
+        return FileResponse(
+            path="inputs/example_excel.xlsx",
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            filename="inputs/example_excel.xlsx"
         )
-        return completion.choices[0].message
-    else:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": message
-                }
-            ],
-            response_format=response_model
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="Example Excel file not found")
 
+
+@app.post("/powerpoint")
+async def convert_excel_to_pptx(
+        file: UploadFile,
+        background_tasks: BackgroundTasks,
+        chart_core_message: str = Form(...)
+):
+    try:
+        uuid_string = str(uuid.uuid4())
+
+        content = await file.read()
+        excel_bytes_content = BytesIO(content)
+        excel_file_path = f"{uuid_string}_{file.filename}.xlsx"
+        async with aiofiles.open(excel_file_path, "wb") as output_file:
+            await output_file.write(content)
+        upload_to_google_drive(excel_file_path,
+                                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                               f"{uuid_string}.xlsx"
+                                               )
+
+        ppt_file_path = pptservice.create_chart(
+            excel_bytes_content=excel_bytes_content,
+            chart_core_message=chart_core_message,
+            uuid=uuid_string
         )
-        return completion.choices[0].message.parsed
+        upload_to_google_drive(ppt_file_path,
+                                             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                                             f"{uuid_string}.pptx"
+                                             )
+
+        background_tasks.add_task(cleanup_files, excel_file_path, ppt_file_path)
+
+        return FileResponse(
+            path=ppt_file_path,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            filename=ppt_file_path)
+
+    except Exception as e:
+        print(str(e))
+        raise HTTPException(status_code=500, detail=f"An error occurred while processing the file: {str(e)}")
+    finally:
+        await file.close()
 
 
-# Chart creator
-
-def _create_stacked_bar_chart(pivot_table, diagram_title, chart_title):
-    presentation = Presentation(TEMPLATE_PATH)
-    slide = presentation.slides.add_slide(presentation.slide_layouts[1])
-
-    chart_data = CategoryChartData()
-    categories_column = pivot_table.columns[0]
-    chart_data.categories = pivot_table[categories_column].tolist()
-
-    for column in pivot_table.columns[1:]:
-        chart_data.add_series(str(column), pivot_table[column].tolist())
-
-    diagram_placeholder = slide.placeholders[13]
-    chart = diagram_placeholder.insert_chart(
-        XL_CHART_TYPE.COLUMN_CLUSTERED, chart_data
-    ).chart
-
-    # Customize the chart
-    slide.shapes.title.text = chart_title
-    chart.has_title = True
-    chart.chart_title.text_frame.text = diagram_title
-    chart.has_legend = True
-    chart.legend.include_in_layout = False
-    chart.legend.position = XL_LEGEND_POSITION.BOTTOM  # Bottom of the chart (default)
-
-    # Save the presentation
-    presentation.save("stacked_bar_chart.pptx")
+def cleanup_files(*file_paths):
+    """Remove files from the filesystem."""
+    for file_path in file_paths:
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 
-# Prompts
-
-def _create_chart_selection_prompt(table_headers, chart_message):
-    return (f'Here are the columns of a table: {table_headers}. Which chart type is best suited to support the '
-            f'message "{chart_message}". Please select from BAR_CHART and WATERFALL_CHART. '
-            f'Respond exactly with that word.')
-
-
-def _create_data_selection_prompt(table_headers, chart_message):
-    return (f'Here are the columns of a table: {table_headers}. In order to create a stacked bar chart to support this '
-            f'message: {chart_message}. Which column should be the category, subcategory and value? Please also provide '
-            f'a short descriptive name for the values with a unit if possible (e.g. "living room size in square meter"')
-
-
-# Main function
-def create_chart(data_path, chart_core_message):
-    df = pd.read_excel(data_path)
-
-    df_headers = df.columns.tolist()
-
-    chart_selection_prompt = _create_chart_selection_prompt(df_headers, chart_core_message)
-
-    """selected_chart_type = _query_openai(
-        message=chart_selection_prompt,
-        response_model=SelectedChartType
-    )"""
-    # Mock
-    selected_chart_type = SelectedChartType(chartType="BAR_CHART")
-
-    if selected_chart_type.chartType == "BAR_CHART":
-
-        data_selection_prompt = _create_data_selection_prompt(df_headers, chart_core_message)
-        """bar_chart_data_structure = _query_openai(
-            message=data_selection_prompt,
-            response_model=BarChartDataStructure
-        )"""
-        # mock
-        bar_chart_data_structure = BarChartDataStructure(
-            category="Market",
-            subcategory="Year",
-            value="Ice cream sales",
-            title="Ice cream sales in EUR"
-        )
-
-        pivot_df = df.pivot(
-            index=bar_chart_data_structure.category,
-            columns=bar_chart_data_structure.subcategory,
-            values=bar_chart_data_structure.value
-        )
-        pivot_df = pivot_df.reset_index()  # Reset index for easier PowerPoint processing
-        print(pivot_df)
-        _create_stacked_bar_chart(pivot_df, bar_chart_data_structure.title, chart_core_message)
-
-
-create_chart(DATA_PATH, CHART_CORE_MESSAGE)
-
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000)
