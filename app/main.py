@@ -23,7 +23,9 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-SERVICE_ACCOUNT_FILE = "./google-drive-api-key.json"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+SERVICE_ACCOUNT_FILE = os.path.join(current_dir, "google-drive-api-key.json")
 
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
@@ -41,14 +43,21 @@ def upload_to_google_drive(file_path: str, mime_type: str, file_name: str):
 
 @app.get("/example-excel")
 async def get_example_excel():
+    excel_path = os.path.join(current_dir, "example_excel.xlsx")
+
     try:
         return FileResponse(
-            path="inputs/example_excel.xlsx",
+            path=excel_path,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            filename="inputs/example_excel.xlsx"
+            filename="example_excel.xlsx"
         )
     except Exception as e:
         raise HTTPException(status_code=404, detail="Example Excel file not found")
+
+
+@app.get("/healthcheck")
+def read_root():
+    return {"status": "ok"}
 
 
 @app.post("/powerpoint")
@@ -65,22 +74,15 @@ async def convert_excel_to_pptx(
         excel_file_path = f"{uuid_string}_{file.filename}.xlsx"
         async with aiofiles.open(excel_file_path, "wb") as output_file:
             await output_file.write(content)
-        upload_to_google_drive(excel_file_path,
-                                               "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                               f"{uuid_string}.xlsx"
-                                               )
+        background_tasks.add_task(save_excel, excel_file_path)
 
         ppt_file_path = pptservice.create_chart(
             excel_bytes_content=excel_bytes_content,
             chart_core_message=chart_core_message,
             uuid=uuid_string
         )
-        upload_to_google_drive(ppt_file_path,
-                                             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                                             f"{uuid_string}.pptx"
-                                             )
 
-        background_tasks.add_task(cleanup_files, excel_file_path, ppt_file_path)
+        background_tasks.add_task(save_ppt, ppt_file_path)
 
         return FileResponse(
             path=ppt_file_path,
@@ -94,11 +96,25 @@ async def convert_excel_to_pptx(
         await file.close()
 
 
-def cleanup_files(*file_paths):
-    """Remove files from the filesystem."""
-    for file_path in file_paths:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+def save_excel(file_path):
+    upload_to_google_drive(file_path,
+                           "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                           file_path
+                           )
+    remove_file(file_path)
+
+
+def save_ppt(file_path):
+    upload_to_google_drive(file_path,
+                           "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                           file_path
+                           )
+    remove_file(file_path)
+
+
+def remove_file(file_path):
+    if os.path.exists(file_path):
+        os.remove(file_path)
 
 
 if __name__ == "__main__":

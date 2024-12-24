@@ -6,7 +6,7 @@ from googleapiclient.errors import HttpError
 # Only used to retrieve files from google drive
 
 # Path to your service account JSON file
-SERVICE_ACCOUNT_FILE = './google-drive-api-key.json'
+SERVICE_ACCOUNT_FILE = 'app/google-drive-api-key.json'
 
 # Scopes for the Google Drive API
 SCOPES = ['https://www.googleapis.com/auth/drive']

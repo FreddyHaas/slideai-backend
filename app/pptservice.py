@@ -1,4 +1,5 @@
 import datetime
+import os
 
 from openpyxl.reader.excel import load_workbook
 from pptx import Presentation
@@ -13,7 +14,7 @@ from models import ClusteredBarOrColumnDataStructure, LineChartDataStructure, Se
     BubbleChartDataStructure, \
     BarOrColumnDataStructure, PieChartDataStructure
 
-MOCK_AI_API_CALLS = True
+MOCK_AI_API_CALLS = False
 
 LABEL_COLOR = RGBColor(89, 89, 89)
 GRID_COLOR = RGBColor(217, 217, 217)
@@ -22,13 +23,15 @@ LINE_WIDTH = Pt(0.2).emu
 
 client = OpenAI()
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
 CHART_CORE_MESSAGE = "China is the most important ice cream market in 2029"
 DATA_THREE_COLUMNS = "./inputs/market_year_sales_single_row_header.xlsx"
 DATA_TWO_COLUMNS = "./inputs/market_sales_single_row_header.xlsx"
 DATA_PIE_CHART = "./inputs/pie_chart_sales_single_row_header.xlsx"
 DATA_TWO_TIME_SERIES = "./inputs/two_time_series_single_row_header.xlsx"
 DATA_BUBBLE_CHART = "./inputs/bubble_chart_single_row_header.xlsx"
-TEMPLATE_PATH = "./template.pptx"
+TEMPLATE_PATH = os.path.join(current_dir, "template.pptx")
 
 
 # ToDo: Sortierung bei diversen Charttypen (Bar, Column,...)
@@ -1242,11 +1245,11 @@ def create_chart(excel_bytes_content, chart_core_message, uuid):
         core_message=chart_core_message,
         header_cell_formats=header_cell_formats)
 
-    # selected_chart_type = _query_openai(message=chart_selection_prompt, response_model=SelectedChartType)
-    selected_chart_type = SelectedChartType(
-        chartType=ChartType.LINE,
-        lastLineIncludesSum=False
-    )
+    selected_chart_type = _query_openai(message=chart_selection_prompt, response_model=SelectedChartType)
+    # selected_chart_type = SelectedChartType(
+    #     chartType=ChartType.LINE,
+    #     lastLineIncludesSum=False
+    # )
 
     if selected_chart_type.lastLineIncludesSum:
         df = df.drop(df.index[-1])

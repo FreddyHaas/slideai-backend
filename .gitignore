@@ -2,5 +2,5 @@
 .idea
 /outputs/
 /inputs/
-/google-drive-api-key.json
+/app/google-drive-api-key.json
 /.vscode/
