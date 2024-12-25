@@ -62,3 +62,10 @@ class PieChartDataStructure(BaseModel):
 class SelectedChartType(BaseModel):
     chartType: str
     lastLineIncludesSum: bool
+
+
+class TablePivot(BaseModel):
+    needsPivoting: bool
+    index: str
+    columns: str
+    values: str

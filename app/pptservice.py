@@ -12,7 +12,7 @@ from pptx.util import Pt
 
 from models import ClusteredBarOrColumnDataStructure, LineChartDataStructure, SelectedChartType, ChartType, \
     BubbleChartDataStructure, \
-    BarOrColumnDataStructure, PieChartDataStructure
+    BarOrColumnDataStructure, PieChartDataStructure, TablePivot
 
 MOCK_AI_API_CALLS = False
 
@@ -67,7 +67,7 @@ def _query_openai(message, response_model=None):
 
 # Column chart creators
 def _create_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="column chart",
@@ -135,7 +135,7 @@ def _create_column_chart(slide, df, headers, chart_core_message, header_cell_for
 
 
 def _create_clustered_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _clustered_bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="clustered column chart",
@@ -213,7 +213,7 @@ def _create_clustered_column_chart(slide, df, headers, chart_core_message, heade
 
 
 def _create_stacked_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _clustered_bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="clustered column chart",
@@ -290,7 +290,7 @@ def _create_stacked_column_chart(slide, df, headers, chart_core_message, header_
 
 
 def _create_100_percent_stacked_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _clustered_bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="clustered column chart",
@@ -378,7 +378,7 @@ def _create_100_percent_stacked_column_chart(slide, df, headers, chart_core_mess
 
 # Bar chart creators
 def _create_bar_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="bar chart",
@@ -446,7 +446,7 @@ def _create_bar_chart(slide, df, headers, chart_core_message, header_cell_format
 
 
 def _create_clustered_bar_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _clustered_bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="clustered column chart",
@@ -523,7 +523,7 @@ def _create_clustered_bar_chart(slide, df, headers, chart_core_message, header_c
 
 
 def _create_stacked_bar_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _clustered_bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="clustered column chart",
@@ -603,7 +603,7 @@ def _create_stacked_bar_chart(slide, df, headers, chart_core_message, header_cel
 
 
 def _create_100_percent_stacked_bar_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _clustered_bar_or_column_chart_data_selection_prompt(
+    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="clustered column chart",
@@ -692,7 +692,7 @@ def _create_100_percent_stacked_bar_chart(slide, df, headers, chart_core_message
 # Pie chart creators
 # ToDo: Label format
 def _create_pie_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _pie_chart_data_selection_prompt(
+    data_selection_prompt = _create_pie_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="pie chart",
@@ -745,7 +745,7 @@ def _create_pie_chart(slide, df, headers, chart_core_message, header_cell_format
 
 
 def _create_doughnut_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _pie_chart_data_selection_prompt(
+    data_selection_prompt = _create_pie_chart_data_selection_prompt(
         table_headers=headers,
         chart_message=chart_core_message,
         chart_type="doughnut chart",
@@ -799,8 +799,37 @@ def _create_doughnut_chart(slide, df, headers, chart_core_message, header_cell_f
 
 # Time series data
 def _create_line_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _line_chart_data_selection_prompt(headers, chart_core_message, "line chart",
-                                                              header_cell_formats)
+
+    pivot_prompt = _create_pivot_data_prompt(df=df, core_message=chart_core_message, chart_type="line chart")
+
+    pivot_response = _query_openai(
+        message=pivot_prompt,
+        response_model=TablePivot
+    ) if not MOCK_AI_API_CALLS else (
+        TablePivot(
+            needsPivoting=False,
+            index="null",
+            columns="null",
+            values="null"
+        )
+    )
+
+    if pivot_response.needsPivoting is True:
+        df = df.pivot(index=pivot_response.index,
+                      columns=pivot_response.columns,
+                      values=pivot_response.values
+                      )
+        headers = df.columns.tolist()
+        values_cell_formats = header_cell_formats[pivot_response.values]
+        header_cell_formats = {}
+        for header in headers:
+            header_cell_formats[header] = f"{pivot_response.values} in format ${values_cell_formats}"
+
+    data_selection_prompt = _create_line_chart_data_selection_prompt(headers,
+                                                                     chart_core_message,
+                                                                     "line chart",
+                                                                     header_cell_formats)
+
     line_chart_data_structure = _query_openai(
         message=data_selection_prompt,
         response_model=LineChartDataStructure
@@ -814,7 +843,7 @@ def _create_line_chart(slide, df, headers, chart_core_message, header_cell_forma
 
     # Chart creation
     chart_data = CategoryChartData()
-    chart_data.categories = df[line_chart_data_structure.category].tolist()
+    chart_data.categories = df[line_chart_data_structure.category].tolist() if not pivot_response.needsPivoting else df.index.tolist()
 
     for column in line_chart_data_structure.series:
         chart_data.add_series(column, df[column].tolist())
@@ -863,8 +892,8 @@ def _create_line_chart(slide, df, headers, chart_core_message, header_cell_forma
 
 
 def _create_stacked_area_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _line_chart_data_selection_prompt(headers, chart_core_message, "stacked area chart",
-                                                              header_cell_formats)
+    data_selection_prompt = _create_line_chart_data_selection_prompt(headers, chart_core_message, "stacked area chart",
+                                                                     header_cell_formats)
     line_chart_data_structure = _query_openai(
         message=data_selection_prompt,
         response_model=LineChartDataStructure
@@ -929,8 +958,8 @@ def _create_stacked_area_chart(slide, df, headers, chart_core_message, header_ce
 # ToDo: Title anpassen
 # ToDo: Styling
 def _create_100_percent_stacked_area_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _line_chart_data_selection_prompt(headers, chart_core_message, "stacked area chart",
-                                                              header_cell_formats)
+    data_selection_prompt = _create_line_chart_data_selection_prompt(headers, chart_core_message, "stacked area chart",
+                                                                     header_cell_formats)
     line_chart_data_structure = _query_openai(
         message=data_selection_prompt,
         response_model=LineChartDataStructure
@@ -997,8 +1026,8 @@ def _create_100_percent_stacked_area_chart(slide, df, headers, chart_core_messag
 # ToDo: Was machen, wenn Daten transponiert sind
 # ToDo: Labels und Axis formatting
 def _create_bubble_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _bubble_chart_data_selection_prompt(headers, chart_core_message, "bubble chart",
-                                                                header_cell_formats)
+    data_selection_prompt = _create_bubble_chart_data_selection_prompt(headers, chart_core_message, "bubble chart",
+                                                                       header_cell_formats)
     bubble_chart_data_structure = _query_openai(
         message=data_selection_prompt,
         response_model=BubbleChartDataStructure
@@ -1135,7 +1164,7 @@ Please determine if the last row contains the sum of all previous rows.
     return prompt.strip()
 
 
-def _bar_or_column_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
+def _create_bar_or_column_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
     return (
         f"You are provided with a table containing the following columns: {table_headers}.\n"
         f"Each column has a specific format, as described here: {header_cell_formats}.\n"
@@ -1150,7 +1179,8 @@ def _bar_or_column_chart_data_selection_prompt(table_headers, chart_message, cha
     )
 
 
-def _clustered_bar_or_column_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
+def _create_clustered_bar_or_column_chart_data_selection_prompt(table_headers, chart_message, chart_type,
+                                                                header_cell_formats):
     return (
         f"You are provided with a table containing the following columns: {table_headers}.\n"
         f"Each column has a specific format, as described here: {header_cell_formats}.\n"
@@ -1166,7 +1196,7 @@ def _clustered_bar_or_column_chart_data_selection_prompt(table_headers, chart_me
     )
 
 
-def _line_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
+def _create_line_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
     return (
         f"You are provided with a table containing the following columns: {table_headers}.\n"
         f"Each column has a specific format, as described here: {header_cell_formats}.\n"
@@ -1181,7 +1211,7 @@ def _line_chart_data_selection_prompt(table_headers, chart_message, chart_type, 
     )
 
 
-def _bubble_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
+def _create_bubble_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
     return (
         f"You are provided with a table containing the following columns: {table_headers}.\n"
         f"Each column has a specific format, as described here: {header_cell_formats}.\n"
@@ -1200,7 +1230,7 @@ def _bubble_chart_data_selection_prompt(table_headers, chart_message, chart_type
     )
 
 
-def _pie_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
+def _create_pie_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
     return (
         f"You are provided with a table containing the following columns: {table_headers}.\n"
         f"Each column has a specific format, as described here: {header_cell_formats}.\n"
@@ -1214,6 +1244,50 @@ def _pie_chart_data_selection_prompt(table_headers, chart_message, chart_type, h
         f"For currency units please always use the ISO currency code e.g. EUR instead of €"
         f"For percentages please use the % symbol."
     )
+
+
+def _create_pivot_data_prompt(df, core_message, chart_type):
+    # Extract column names and descriptions
+    columns = df.columns.tolist()
+
+    # Summarize data overview (e.g., range or unique values for each column)
+    data_overview = []
+    for col in columns:
+        if pd.api.types.is_numeric_dtype(df[col]):
+            summary = f"Range: {df[col].min()} to {df[col].max()}"
+        else:
+            unique_vals = df[col].unique()
+            summary = f"Examples: {', '.join(map(str, unique_vals[:3]))}"  # Show up to 3 examples
+        data_overview.append(f"- {col}: {summary}")
+    data_overview_text = "\n".join(data_overview)
+
+    # Include the first 5 rows of the DataFrame
+    first_five_rows = df.head(5).to_string(index=False)
+
+    # Construct the prompt
+    prompt = f"""
+    I have a table with the following summary characteristics:
+
+    - **Column names:**
+    {columns}
+
+    - **Data overview:**
+    {data_overview_text}
+
+    - **First 5 rows of the data:**
+    {first_five_rows}
+
+    The chart should support the following message:
+    "{core_message}"
+
+    I want to create a {chart_type} from it. Please determine
+    1. Does it make sense to pivot the data? If the answer is false, answer all following questions with "null" else 
+    answer with the respective column name.
+    2. What column should be the index? 
+    3. What column should be the new columns?
+    4. What column should be the new values?
+    """
+    return prompt.strip()
 
 
 # Data ingestion
@@ -1329,7 +1403,6 @@ def create_chart(excel_bytes_content, chart_core_message, uuid):
     presentation_path = f"{uuid}_{selected_chart_type.chartType}_{datetime.datetime.now()}.pptx"
     presentation.save(presentation_path)
     return presentation_path
-
 
 # create_chart(excel_bytes_content=DATA_TWO_TIME_SERIES,
 #              chart_core_message="China will be the most important ice cream market by 2029",
