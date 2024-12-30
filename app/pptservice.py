@@ -10,7 +10,8 @@ import pandas as pd
 from openai import OpenAI
 from pptx.util import Pt
 
-from models import ClusteredBarOrColumnDataStructure, LineChartDataStructure, SelectedChartType, ChartType, \
+from models import ClusteredBarOrColumnDataStructure, LineOrClusteredColumnChartDataStructure, SelectedChartType, \
+    ChartType, \
     BubbleChartDataStructure, \
     BarOrColumnDataStructure, PieChartDataStructure, TablePivot
 
@@ -41,24 +42,26 @@ TEMPLATE_PATH = os.path.join(current_dir, "template.pptx")
 def _query_openai(message, response_model=None):
     if response_model is None:
         completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": message
-                }
-            ]
-        )
-        return completion.choices[0].message
-    else:
-        completion = client.beta.chat.completions.parse(
-            model="gpt-4o-mini",
+            model="gpt-4o",
             messages=[
                 {
                     "role": "user",
                     "content": message
                 }
             ],
+            temperature=0
+        )
+        return completion.choices[0].message
+    else:
+        completion = client.beta.chat.completions.parse(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": message
+                }
+            ],
+            temperature=0,
             response_format=response_model
 
         )
@@ -83,6 +86,8 @@ def _create_column_chart(slide, df, headers, chart_core_message, header_cell_for
             title="Ice cream sales in EUR"
         )
     )
+
+    df = df.groupby(column_chart_data_structure.category, as_index=False)[column_chart_data_structure.value].sum()
 
     # Prepare the data for the chart
     if column_chart_data_structure.category not in df.columns or \
@@ -135,36 +140,62 @@ def _create_column_chart(slide, df, headers, chart_core_message, header_cell_for
 
 
 def _create_clustered_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
-        table_headers=headers,
-        chart_message=chart_core_message,
-        chart_type="clustered column chart",
-        header_cell_formats=header_cell_formats)
-    column_chart_data_structure = _query_openai(
-        message=data_selection_prompt,
-        response_model=ClusteredBarOrColumnDataStructure
+
+    pivot_prompt = _create_pivot_data_prompt(df=df, core_message=chart_core_message,
+                                             chart_type="clustered column chart")
+
+    pivot_response = _query_openai(
+        message=pivot_prompt,
+        response_model=TablePivot
     ) if not MOCK_AI_API_CALLS else (
-        ClusteredBarOrColumnDataStructure(
-            category="Market",
-            subcategory="Year",
-            value="Ice cream sales",
-            title="Ice cream sales in EUR")
+        TablePivot(
+            needsPivoting=False,
+            index="null",
+            columns="null",
+            values="null"
+        )
     )
 
-    pivot_df = df.pivot(
-        index=column_chart_data_structure.category,
-        columns=column_chart_data_structure.subcategory,
-        values=column_chart_data_structure.value
+    print(pivot_response.data_structure_analysis)
+    print(pivot_response.explain_pivot)
+
+    if pivot_response.long_format is True:
+        df = df.pivot(index=pivot_response.index,
+                      columns=pivot_response.columns,
+                      values=pivot_response.values
+                      )
+        headers = df.columns.tolist()
+        values_cell_formats = header_cell_formats[pivot_response.values]
+        header_cell_formats = {}
+        for header in headers:
+            header_cell_formats[header] = f"{pivot_response.values} in format ${values_cell_formats}"
+
+    data_selection_prompt = _create_line_or_clustered_column_chart_data_selection_prompt(headers,
+                                                                                         chart_core_message,
+                                                                                         "clustered column chart",
+                                                                                         header_cell_formats)
+
+    column_chart_data_structure = _query_openai(
+        message=data_selection_prompt,
+        response_model=LineOrClusteredColumnChartDataStructure
+    ) if not MOCK_AI_API_CALLS else (
+        LineOrClusteredColumnChartDataStructure(
+            category="Year",
+            series=["USA", "China"],
+            title="Some title"
+        )
     )
-    pivot_df = pivot_df.reset_index()  # Reset index for easier PowerPoint processing
 
     # Chart creation
     chart_data = CategoryChartData()
-    categories_column = pivot_df.columns[0]
-    chart_data.categories = pivot_df[categories_column].tolist()
+    chart_data.categories = df[
+        column_chart_data_structure.category].tolist() if not pivot_response.long_format else df.index.tolist()
 
-    for column in pivot_df.columns[1:]:
-        chart_data.add_series(str(column), pivot_df[column].tolist())
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
+
+    for column in column_chart_data_structure.series:
+        chart_data.add_series(column, df[column].tolist())
 
     diagram_placeholder = slide.placeholders[13]
     chart = diagram_placeholder.insert_chart(
@@ -213,38 +244,61 @@ def _create_clustered_column_chart(slide, df, headers, chart_core_message, heade
 
 
 def _create_stacked_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
-        table_headers=headers,
-        chart_message=chart_core_message,
-        chart_type="clustered column chart",
-        header_cell_formats=header_cell_formats)
-    column_chart_data_structure = _query_openai(
-        message=data_selection_prompt,
-        response_model=ClusteredBarOrColumnDataStructure
+    pivot_prompt = _create_pivot_data_prompt(df=df, core_message=chart_core_message,
+                                             chart_type="clustered column chart")
+
+    pivot_response = _query_openai(
+        message=pivot_prompt,
+        response_model=TablePivot
     ) if not MOCK_AI_API_CALLS else (
-        ClusteredBarOrColumnDataStructure(
-            category="Market",
-            subcategory="Year",
-            value="Ice cream sales",
-            title="Ice cream sales in EUR"
+        TablePivot(
+            needsPivoting=False,
+            index="null",
+            columns="null",
+            values="null"
         )
     )
 
-    # Pivot the DataFrame to get data for the stacked chart
-    pivot_df = df.pivot(
-        index=column_chart_data_structure.category,
-        columns=column_chart_data_structure.subcategory,
-        values=column_chart_data_structure.value
+    print(pivot_response.data_structure_analysis)
+    print(pivot_response.explain_pivot)
+
+    if pivot_response.long_format is True:
+        df = df.pivot(index=pivot_response.index,
+                      columns=pivot_response.columns,
+                      values=pivot_response.values
+                      )
+        headers = df.columns.tolist()
+        values_cell_formats = header_cell_formats[pivot_response.values]
+        header_cell_formats = {}
+        for header in headers:
+            header_cell_formats[header] = f"{pivot_response.values} in format ${values_cell_formats}"
+
+    data_selection_prompt = _create_line_or_clustered_column_chart_data_selection_prompt(headers,
+                                                                                         chart_core_message,
+                                                                                         "clustered column chart",
+                                                                                         header_cell_formats)
+
+    column_chart_data_structure = _query_openai(
+        message=data_selection_prompt,
+        response_model=LineOrClusteredColumnChartDataStructure
+    ) if not MOCK_AI_API_CALLS else (
+        LineOrClusteredColumnChartDataStructure(
+            category="Year",
+            series=["USA", "China"],
+            title="Some title"
+        )
     )
-    pivot_df = pivot_df.reset_index()  # Reset index for easier PowerPoint processing
 
     # Chart creation
     chart_data = CategoryChartData()
-    categories_column = pivot_df.columns[0]
-    chart_data.categories = pivot_df[categories_column].tolist()
+    chart_data.categories = df[
+        column_chart_data_structure.category].tolist() if not pivot_response.long_format else df.index.tolist()
 
-    for column in pivot_df.columns[1:]:
-        chart_data.add_series(str(column), pivot_df[column].tolist())
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
+
+    for column in df.columns[1:]:
+        chart_data.add_series(str(column), df[column].tolist())
 
     diagram_placeholder = slide.placeholders[13]
     chart = diagram_placeholder.insert_chart(
@@ -290,42 +344,66 @@ def _create_stacked_column_chart(slide, df, headers, chart_core_message, header_
 
 
 def _create_100_percent_stacked_column_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _create_clustered_bar_or_column_chart_data_selection_prompt(
-        table_headers=headers,
-        chart_message=chart_core_message,
-        chart_type="clustered column chart",
-        header_cell_formats=header_cell_formats)
-    column_chart_data_structure = _query_openai(
-        message=data_selection_prompt,
-        response_model=ClusteredBarOrColumnDataStructure
+    pivot_prompt = _create_pivot_data_prompt(df=df, core_message=chart_core_message,
+                                             chart_type="100% stacked column chart")
+
+    pivot_response = _query_openai(
+        message=pivot_prompt,
+        response_model=TablePivot
     ) if not MOCK_AI_API_CALLS else (
-        ClusteredBarOrColumnDataStructure(
-            category="Market",
-            subcategory="Year",
-            value="Ice cream sales",
-            title="Ice cream sales in EUR"
+        TablePivot(
+            needsPivoting=False,
+            index="null",
+            columns="null",
+            values="null"
         )
     )
 
-    # Pivot the DataFrame to get data for the stacked chart
-    pivot_df = df.pivot(
-        index=column_chart_data_structure.category,
-        columns=column_chart_data_structure.subcategory,
-        values=column_chart_data_structure.value
+    print(pivot_response.data_structure_analysis)
+    print(pivot_response.explain_pivot)
+
+    if pivot_response.long_format is True:
+        df = df.pivot(index=pivot_response.index,
+                      columns=pivot_response.columns,
+                      values=pivot_response.values
+                      )
+        headers = df.columns.tolist()
+        values_cell_formats = header_cell_formats[pivot_response.values]
+        header_cell_formats = {}
+        for header in headers:
+            header_cell_formats[header] = f"{pivot_response.values} in format ${values_cell_formats}"
+
+    data_selection_prompt = _create_line_or_clustered_column_chart_data_selection_prompt(headers,
+                                                                                         chart_core_message,
+                                                                                         "100% stacked column chart",
+                                                                                         header_cell_formats)
+
+    column_chart_data_structure = _query_openai(
+        message=data_selection_prompt,
+        response_model=LineOrClusteredColumnChartDataStructure
+    ) if not MOCK_AI_API_CALLS else (
+        LineOrClusteredColumnChartDataStructure(
+            category="Year",
+            series=["USA", "China"],
+            title="Some title"
+        )
     )
-    pivot_df = pivot_df.reset_index()  # Reset index for easier PowerPoint processing
+
+    df.reset_index()
 
     # Normalize the pivoted data to get 100% stacked values (percentage)
-    pivot_df_percentage = pivot_df.copy()
-    pivot_df_percentage.iloc[:, 1:] = pivot_df.iloc[:, 1:].div(pivot_df.iloc[:, 1:].sum(axis=1), axis=0) * 100
+    pivot_df_percentage = df.copy()
+    pivot_df_percentage[column_chart_data_structure.series] = df[column_chart_data_structure.series].div(df[column_chart_data_structure.series].sum(axis=1), axis=0) * 100
 
     # Chart creation
     chart_data = CategoryChartData()
-    categories_column = pivot_df_percentage.columns[0]
-    chart_data.categories = pivot_df_percentage[categories_column].tolist()
+    chart_data.categories = pivot_df_percentage[column_chart_data_structure.category].tolist() if not pivot_response.long_format else df.index.tolist()
 
-    for column in pivot_df_percentage.columns[1:]:
-        chart_data.add_series(str(column), pivot_df_percentage[column].tolist())
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
+
+    for column in column_chart_data_structure.series:
+        chart_data.add_series(column, pivot_df_percentage[column].tolist())
 
     diagram_placeholder = slide.placeholders[13]
     chart = diagram_placeholder.insert_chart(
@@ -399,6 +477,9 @@ def _create_bar_chart(slide, df, headers, chart_core_message, header_cell_format
     if bar_chart_data_structure.category not in df.columns or \
             bar_chart_data_structure.value not in df.columns:
         raise ValueError("Specified category or value columns not found in DataFrame.")
+
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
 
     # Chart creation
     chart_data = CategoryChartData()
@@ -713,6 +794,9 @@ def _create_pie_chart(slide, df, headers, chart_core_message, header_cell_format
     df_percentages = df.copy()
     df_percentages[chart_data_structure.value_column] = (df[chart_data_structure.value_column] / total)
 
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
+
     # Create a CategoryChartData object
     chart_data = CategoryChartData()
     chart_data.categories = df_percentages[chart_data_structure.category_column].tolist()
@@ -766,6 +850,9 @@ def _create_doughnut_chart(slide, df, headers, chart_core_message, header_cell_f
     df_percentages = df.copy()
     df_percentages[chart_data_structure.value_column] = (df[chart_data_structure.value_column] / total)
 
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
+
     # Create a CategoryChartData object
     chart_data = CategoryChartData()
     chart_data.categories = df_percentages[chart_data_structure.category_column].tolist()
@@ -799,51 +886,65 @@ def _create_doughnut_chart(slide, df, headers, chart_core_message, header_cell_f
 
 # Time series data
 def _create_line_chart(slide, df, headers, chart_core_message, header_cell_formats):
+    more_than_two_columns = len(headers) > 2
+    needs_pivoting = False
 
-    pivot_prompt = _create_pivot_data_prompt(df=df, core_message=chart_core_message, chart_type="line chart")
+    if more_than_two_columns:
+        pivot_prompt = _create_pivot_data_prompt(df=df, core_message=chart_core_message, chart_type="line chart")
 
-    pivot_response = _query_openai(
-        message=pivot_prompt,
-        response_model=TablePivot
-    ) if not MOCK_AI_API_CALLS else (
-        TablePivot(
-            needsPivoting=False,
-            index="null",
-            columns="null",
-            values="null"
+        pivot_response = _query_openai(
+            message=pivot_prompt,
+            response_model=TablePivot
+        ) if not MOCK_AI_API_CALLS else (
+            TablePivot(
+                needsPivoting=False,
+                index="null",
+                columns="null",
+                values="null"
+            )
         )
-    )
 
-    if pivot_response.needsPivoting is True:
-        df = df.pivot(index=pivot_response.index,
-                      columns=pivot_response.columns,
-                      values=pivot_response.values
-                      )
-        headers = df.columns.tolist()
-        values_cell_formats = header_cell_formats[pivot_response.values]
-        header_cell_formats = {}
-        for header in headers:
-            header_cell_formats[header] = f"{pivot_response.values} in format ${values_cell_formats}"
+        print(pivot_response.data_structure_analysis)
+        print(pivot_response.explain_pivot)
 
-    data_selection_prompt = _create_line_chart_data_selection_prompt(headers,
-                                                                     chart_core_message,
-                                                                     "line chart",
-                                                                     header_cell_formats)
+        needs_pivoting = pivot_response.long_format
+
+        if needs_pivoting is True:
+            df = df.pivot(index=pivot_response.index,
+                          columns=pivot_response.columns,
+                          values=pivot_response.values
+                          )
+            headers = df.columns.tolist()
+            values_cell_formats = header_cell_formats[pivot_response.values]
+            header_cell_formats = {}
+            for header in headers:
+                header_cell_formats[header] = f"{pivot_response.values} in format ${values_cell_formats}"
+
+    data_selection_prompt = _create_line_or_clustered_column_chart_data_selection_prompt(headers,
+                                                                                         chart_core_message,
+                                                                                         "line chart",
+                                                                                         header_cell_formats)
 
     line_chart_data_structure = _query_openai(
         message=data_selection_prompt,
-        response_model=LineChartDataStructure
+        response_model=LineOrClusteredColumnChartDataStructure
     ) if not MOCK_AI_API_CALLS else (
-        LineChartDataStructure(
+        LineOrClusteredColumnChartDataStructure(
             category="Year",
             series=["USA", "China"],
             title="Some title"
         )
     )
 
+    if more_than_two_columns is False or needs_pivoting is False:
+        df = df.groupby(line_chart_data_structure.category, as_index=False)[line_chart_data_structure.series].sum()
+
     # Chart creation
     chart_data = CategoryChartData()
-    chart_data.categories = df[line_chart_data_structure.category].tolist() if not pivot_response.needsPivoting else df.index.tolist()
+    chart_data.categories = df[line_chart_data_structure.category].tolist() if not needs_pivoting else df.index.tolist()
+
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
 
     for column in line_chart_data_structure.series:
         chart_data.add_series(column, df[column].tolist())
@@ -892,13 +993,14 @@ def _create_line_chart(slide, df, headers, chart_core_message, header_cell_forma
 
 
 def _create_stacked_area_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _create_line_chart_data_selection_prompt(headers, chart_core_message, "stacked area chart",
-                                                                     header_cell_formats)
+    data_selection_prompt = _create_line_or_clustered_column_chart_data_selection_prompt(headers, chart_core_message,
+                                                                                         "stacked area chart",
+                                                                                         header_cell_formats)
     line_chart_data_structure = _query_openai(
         message=data_selection_prompt,
-        response_model=LineChartDataStructure
+        response_model=LineOrClusteredColumnChartDataStructure
     ) if not MOCK_AI_API_CALLS else (
-        LineChartDataStructure(
+        LineOrClusteredColumnChartDataStructure(
             category="Year",
             series=["USA", "China"],
             title="Some title"
@@ -908,6 +1010,9 @@ def _create_stacked_area_chart(slide, df, headers, chart_core_message, header_ce
     # Chart creation
     chart_data = CategoryChartData()
     chart_data.categories = df[line_chart_data_structure.category].tolist()
+
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
 
     for column in line_chart_data_structure.series:
         chart_data.add_series(column, df[column].tolist())
@@ -958,13 +1063,14 @@ def _create_stacked_area_chart(slide, df, headers, chart_core_message, header_ce
 # ToDo: Title anpassen
 # ToDo: Styling
 def _create_100_percent_stacked_area_chart(slide, df, headers, chart_core_message, header_cell_formats):
-    data_selection_prompt = _create_line_chart_data_selection_prompt(headers, chart_core_message, "stacked area chart",
-                                                                     header_cell_formats)
+    data_selection_prompt = _create_line_or_clustered_column_chart_data_selection_prompt(headers, chart_core_message,
+                                                                                         "stacked area chart",
+                                                                                         header_cell_formats)
     line_chart_data_structure = _query_openai(
         message=data_selection_prompt,
-        response_model=LineChartDataStructure
+        response_model=LineOrClusteredColumnChartDataStructure
     ) if not MOCK_AI_API_CALLS else (
-        LineChartDataStructure(
+        LineOrClusteredColumnChartDataStructure(
             category="Year",
             series=["USA", "China"],
             title="Some title"
@@ -980,6 +1086,9 @@ def _create_100_percent_stacked_area_chart(slide, df, headers, chart_core_messag
     # Chart creation
     chart_data = CategoryChartData()
     chart_data.categories = normalized_df[line_chart_data_structure.category].tolist()
+
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
 
     # Adding series to the chart
     for column in line_chart_data_structure.series:
@@ -1054,6 +1163,9 @@ def _create_bubble_chart(slide, df, headers, chart_core_message, header_cell_for
     # Create chart data
     chart_data = BubbleChartData()
 
+    # Convert all column headers to strings to avoid errors when matching with selected columns from openai prompt
+    df.columns = df.columns.astype(str)
+
     # Add series and data points to the chart data
     for index, row in pivot_df.iterrows():
         category_label = row[bubble_chart_data_structure.labels_column]
@@ -1104,7 +1216,7 @@ def _create_bubble_chart(slide, df, headers, chart_core_message, header_cell_for
 
 
 # Prompts
-def _create_chart_selection_and_include_last_line_prompt(df, chart_options, core_message, header_cell_formats):
+def _create_chart_selection_prompt(df, chart_options, core_message, header_cell_formats):
     # Extract column names and descriptions
     columns = df.columns.tolist()
 
@@ -1115,7 +1227,9 @@ def _create_chart_selection_and_include_last_line_prompt(df, chart_options, core
             summary = f"Range: {df[col].min()} to {df[col].max()}"
         else:
             unique_vals = df[col].unique()
-            summary = f"Examples: {', '.join(map(str, unique_vals[:3]))}"  # Show up to 3 examples
+            unique_count = len(unique_vals)
+            examples = ', '.join(map(str, unique_vals[:3]))  # Show up to 3 examples
+            summary = f"Number of unique values: {unique_count} | Examples: {examples}"
         data_overview.append(f"- {col}: {summary}")
     data_overview_text = "\n".join(data_overview)
 
@@ -1129,7 +1243,14 @@ def _create_chart_selection_and_include_last_line_prompt(df, chart_options, core
     header_formats = "\n".join([f"- {col}: {fmt}" for col, fmt in header_cell_formats.items()])
 
     # Prepare chart options text
-    chart_options_text = "\n".join([f"- {option}" for option in chart_options])
+    chart_options_text = "\n".join(
+        [
+            f"*{option.value}*\n"
+            f"   - Best suited for: {option.purpose}\n"
+            f"   - Required data: {option.data_input}"
+            for option in chart_options
+        ]
+    )
 
     # Construct the prompt
     prompt = f"""
@@ -1150,7 +1271,8 @@ I have a table with the following summary characteristics:
 The chart should support the following message:
 "{core_message}"
 
-**Task:** Based on this summary of the table, recommend the most appropriate chart type from the following options:
+**Task:** Based on this summary of the table, please explain your reasoning and 
+select the appropriate chart type from the following options:
 {chart_options_text}
 
 Consider the relationships and trends in the data to make your selection.
@@ -1173,12 +1295,14 @@ def _create_bar_or_column_chart_data_selection_prompt(table_headers, chart_messa
         f"Please identify:\n"
         f"1. Which column should be used as the category axis?\n"
         f"2. Which column should be used as the value axis?\n\n"
+        f"The column names must match exactly the column names that were provided above."
         f"Additionally, provide a short descriptive name for the values, including a unit if applicable "
         f"(e.g., 'Living room size in square meters' or 'Vehicle sales in EUR'). "
         f"For currency units please always use the ISO currency code e.g. EUR instead of €"
     )
 
 
+# No longer used
 def _create_clustered_bar_or_column_chart_data_selection_prompt(table_headers, chart_message, chart_type,
                                                                 header_cell_formats):
     return (
@@ -1191,12 +1315,13 @@ def _create_clustered_bar_or_column_chart_data_selection_prompt(table_headers, c
         f"2. Which column should be used as subcategories?\n"
         f"2. Which column should be used as values?\n\n"
         f"Additionally, provide a short descriptive name for the values, including a unit if applicable "
-        f"(e.g., 'Living room size in square meters' or 'Vehicle sales in EUR'). "
+        f"(e.g., 'Living room size in square meters' or 'Vehicle sales in EUR'). For a stacked 100% chart the unit is always %."
         f"For currency units please always use the ISO currency code e.g. EUR instead of €"
     )
 
 
-def _create_line_chart_data_selection_prompt(table_headers, chart_message, chart_type, header_cell_formats):
+def _create_line_or_clustered_column_chart_data_selection_prompt(table_headers, chart_message, chart_type,
+                                                                 header_cell_formats):
     return (
         f"You are provided with a table containing the following columns: {table_headers}.\n"
         f"Each column has a specific format, as described here: {header_cell_formats}.\n"
@@ -1204,10 +1329,12 @@ def _create_line_chart_data_selection_prompt(table_headers, chart_message, chart
         f"'{chart_message}'.\n\n"
         f"Please identify:\n"
         f"1. Which column should be used as the categories?\n"
-        f"2. Which columns should be used for the series data? Please list all columns \n"
-        f"Additionally, provide a short descriptive name for the values of the series data, including a unit if "
-        f"applicable (e.g., 'Living room size in square meters' or 'Vehicle sales in EUR'). "
-        f"For currency units please always use the ISO currency code e.g. EUR instead of €"
+        f"2. Which columns should be used for the series data? Please list all columns. Do not include columns that "
+        f"contain sums! \n"
+        f"The column names must match exactly the column names that were provided above."
+        f"3. Additionally, provide a short descriptive name for the values of the series data, including a unit if "
+        f"applicable (e.g., 'Living room size in square meters' or 'Vehicle sales in EUR'). For 100% stacked column "
+        f"chart, the unit is always %. For currency units please always use the ISO currency code e.g. EUR instead of €"
     )
 
 
@@ -1222,11 +1349,12 @@ def _create_bubble_chart_data_selection_prompt(table_headers, chart_message, cha
         f"2. Which column should be used as the y-axis?\n"
         f"3. Which column should be used for the labels?\n"
         f"4. Which column should be used for the bubble size?\n"
-        f"For x- and y-axis and bubble size please provide a descriptive title if applicable (e.g., 'Living room size "
-        f"in square meters' or 'Vehicle sales in EUR')."
+        f"The column names must match exactly the column names that were provided above."
+        f"5. For x- and y-axis and bubble size please provide a descriptive title if applicable (e.g., 'Living room "
+        f"size in square meters' or 'Vehicle sales in EUR')."
         f"For currency units please always use the ISO currency code e.g. EUR instead of €"
         f"For percentages please use the % symbol"
-        f"Additionally, provide a short descriptive title for the chart"
+        f"6. Additionally, provide a short descriptive title for the chart"
     )
 
 
@@ -1239,10 +1367,9 @@ def _create_pie_chart_data_selection_prompt(table_headers, chart_message, chart_
         f"Please identify:\n"
         f"1. Which column should be used as the x-axis?\n"
         f"2. Which column should be used as the y-axis?\n"
-        f"Please provide a descriptive title for the chart "
-        f"(e.g., 'Living room size in square meters' or 'Vehicle sales in EUR'). "
-        f"For currency units please always use the ISO currency code e.g. EUR instead of €"
-        f"For percentages please use the % symbol."
+        f"The column names must match exactly the column names that were provided above."
+        f"3. Please provide a descriptive title for the chart and include in the unit."
+        f"The unit is always percent, please use the % symbol for that"
     )
 
 
@@ -1261,8 +1388,8 @@ def _create_pivot_data_prompt(df, core_message, chart_type):
         data_overview.append(f"- {col}: {summary}")
     data_overview_text = "\n".join(data_overview)
 
-    # Include the first 5 rows of the DataFrame
-    first_five_rows = df.head(5).to_string(index=False)
+    # Include the first 10 rows of the DataFrame
+    first_ten_rows = df.head(10).to_string(index=False)
 
     # Construct the prompt
     prompt = f"""
@@ -1274,18 +1401,30 @@ def _create_pivot_data_prompt(df, core_message, chart_type):
     - **Data overview:**
     {data_overview_text}
 
-    - **First 5 rows of the data:**
-    {first_five_rows}
+    - **First 10 rows of the data:**
+    {first_ten_rows}
 
-    The chart should support the following message:
+    I want to create a {chart_type} from it that supports the following message:
     "{core_message}"
 
-    I want to create a {chart_type} from it. Please determine
-    1. Does it make sense to pivot the data? If the answer is false, answer all following questions with "null" else 
-    answer with the respective column name.
-    2. What column should be the index? 
-    3. What column should be the new columns?
-    4. What column should be the new values?
+    ### Questions:
+    1. **Data structure analysis:**
+        - Is the data currently in long format (i.e., multiple rows for each category)? 
+   
+    2. **LongFormFormat:**
+       - Answer with "True" if the data is in long format.
+    
+    3. **Explain pivoting**
+        - Assume the table needs to be pivoted in order to input it into the required chart type  
+        - Explain which column should be the index, which column should be the new series and which column should be the values
+         
+    4. **Determine Columns for Pivoting:**
+       - What column should be the **index**? (i.e., the x-axis values of the chart)
+       - What column should be the **new columns**? (i.e., one series per column in the chart)
+       - What column should be the **new values**? (i.e., the y-axis values of the chart)
+    
+    For the index, columns and values please answer with either a column name or a list of column names. 
+    The column names must match exactly the column names that were provided above. Do not add quotation marks or anything else.
     """
     return prompt.strip()
 
@@ -1313,17 +1452,22 @@ def create_chart(excel_bytes_content, chart_core_message, uuid):
     df_headers = df.columns.tolist()
     header_cell_formats = _extract_header_cell_formats(excel_bytes_content)
 
-    chart_selection_prompt = _create_chart_selection_and_include_last_line_prompt(
+    has_more_than_two_headers = len(df_headers) > 2
+
+    chart_selection_prompt = _create_chart_selection_prompt(
         df=df,
-        chart_options=[chart.value for chart in ChartType],
+        chart_options=ChartType.get_all() if has_more_than_two_headers else ChartType.get_all_chart_types_with_two_columns_input(),
         core_message=chart_core_message,
         header_cell_formats=header_cell_formats)
 
-    selected_chart_type = _query_openai(message=chart_selection_prompt, response_model=SelectedChartType)
-    # selected_chart_type = SelectedChartType(
-    #     chartType=ChartType.LINE,
-    #     lastLineIncludesSum=False
-    # )
+    # selected_chart_type = _query_openai(message=chart_selection_prompt, response_model=SelectedChartType)
+    selected_chart_type = SelectedChartType(
+        reasonForSelectedChartType="some reason",
+        chartType=ChartType.LINE,
+        lastLineIncludesSum=False
+    )
+
+    print(selected_chart_type.reasonForSelectedChartType)
 
     if selected_chart_type.lastLineIncludesSum:
         df = df.drop(df.index[-1])
@@ -1349,46 +1493,46 @@ def create_chart(excel_bytes_content, chart_core_message, uuid):
                 slide=slide, df=df, headers=df_headers,
                 chart_core_message=chart_core_message,
                 header_cell_formats=header_cell_formats)
-        case ChartType.BAR.value:
-            _create_bar_chart(
-                slide=slide, df=df, headers=df_headers,
-                chart_core_message=chart_core_message,
-                header_cell_formats=header_cell_formats)
-        case ChartType.BAR_CLUSTERED.value:
-            _create_clustered_bar_chart(
-                slide=slide, df=df, headers=df_headers,
-                chart_core_message=chart_core_message,
-                header_cell_formats=header_cell_formats)
-        case ChartType.BAR_STACKED.value:
-            _create_stacked_bar_chart(
-                slide=slide, df=df, headers=df_headers,
-                chart_core_message=chart_core_message,
-                header_cell_formats=header_cell_formats)
-        case ChartType.BAR_STACKED_100.value:
-            _create_100_percent_stacked_bar_chart(
-                slide=slide, df=df, headers=df_headers,
-                chart_core_message=chart_core_message,
-                header_cell_formats=header_cell_formats)
+        # case ChartType.BAR.value:
+        #     _create_bar_chart(
+        #         slide=slide, df=df, headers=df_headers,
+        #         chart_core_message=chart_core_message,
+        #         header_cell_formats=header_cell_formats)
+        # case ChartType.BAR_CLUSTERED.value:
+        #     _create_clustered_bar_chart(
+        #         slide=slide, df=df, headers=df_headers,
+        #         chart_core_message=chart_core_message,
+        #         header_cell_formats=header_cell_formats)
+        # case ChartType.BAR_STACKED.value:
+        #     _create_stacked_bar_chart(
+        #         slide=slide, df=df, headers=df_headers,
+        #         chart_core_message=chart_core_message,
+        #         header_cell_formats=header_cell_formats)
+        # case ChartType.BAR_STACKED_100.value:
+        #     _create_100_percent_stacked_bar_chart(
+        #         slide=slide, df=df, headers=df_headers,
+        #         chart_core_message=chart_core_message,
+        #         header_cell_formats=header_cell_formats)
         case ChartType.PIE.value:
             _create_pie_chart(
                 slide=slide, df=df, headers=df_headers,
                 chart_core_message=chart_core_message,
                 header_cell_formats=header_cell_formats)
-        case ChartType.DOUGHNUT.value:
-            _create_doughnut_chart(
-                slide=slide, df=df, headers=df_headers,
-                chart_core_message=chart_core_message,
-                header_cell_formats=header_cell_formats)
+        # case ChartType.DOUGHNUT.value:
+        #     _create_doughnut_chart(
+        #         slide=slide, df=df, headers=df_headers,
+        #         chart_core_message=chart_core_message,
+        #         header_cell_formats=header_cell_formats)
         case ChartType.LINE.value:
             _create_line_chart(
                 slide=slide, df=df, headers=df_headers,
                 chart_core_message=chart_core_message,
                 header_cell_formats=header_cell_formats)
-        case ChartType.AREA_STACKED.value:
-            _create_stacked_area_chart(
-                slide=slide, df=df, headers=df_headers,
-                chart_core_message=chart_core_message,
-                header_cell_formats=header_cell_formats)
+        # case ChartType.AREA_STACKED.value:
+        #     _create_stacked_area_chart(
+        #         slide=slide, df=df, headers=df_headers,
+        #         chart_core_message=chart_core_message,
+        #         header_cell_formats=header_cell_formats)
         case ChartType.AREA_STACKED_100.value:
             _create_100_percent_stacked_area_chart(
                 slide=slide, df=df, headers=df_headers,
