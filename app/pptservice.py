@@ -1460,12 +1460,12 @@ def create_chart(excel_bytes_content, chart_core_message, uuid):
         core_message=chart_core_message,
         header_cell_formats=header_cell_formats)
 
-    # selected_chart_type = _query_openai(message=chart_selection_prompt, response_model=SelectedChartType)
-    selected_chart_type = SelectedChartType(
-        reasonForSelectedChartType="some reason",
-        chartType=ChartType.LINE,
-        lastLineIncludesSum=False
-    )
+    selected_chart_type = _query_openai(message=chart_selection_prompt, response_model=SelectedChartType)
+    # selected_chart_type = SelectedChartType(
+    #     reasonForSelectedChartType="some reason",
+    #     chartType=ChartType.LINE,
+    #     lastLineIncludesSum=False
+    # )
 
     print(selected_chart_type.reasonForSelectedChartType)
 
