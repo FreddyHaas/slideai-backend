@@ -111,6 +111,8 @@ def _create_column_chart(slide, df, headers, chart_core_message, header_cell_for
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = column_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Gridlines
     value_axis = chart.value_axis
@@ -206,6 +208,8 @@ def _create_clustered_column_chart(slide, df, headers, chart_core_message, heade
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = column_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -309,6 +313,8 @@ def _create_stacked_column_chart(slide, df, headers, chart_core_message, header_
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = column_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -414,6 +420,8 @@ def _create_100_percent_stacked_column_chart(slide, df, headers, chart_core_mess
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = column_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -498,6 +506,8 @@ def _create_bar_chart(slide, df, headers, chart_core_message, header_cell_format
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = bar_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Gridlines
     value_axis = chart.value_axis
@@ -569,6 +579,8 @@ def _create_clustered_bar_chart(slide, df, headers, chart_core_message, header_c
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = bar_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -648,6 +660,8 @@ def _create_stacked_bar_chart(slide, df, headers, chart_core_message, header_cel
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = bar_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -735,6 +749,8 @@ def _create_100_percent_stacked_bar_chart(slide, df, headers, chart_core_message
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = bar_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -810,6 +826,8 @@ def _create_pie_chart(slide, df, headers, chart_core_message, header_cell_format
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -866,6 +884,8 @@ def _create_doughnut_chart(slide, df, headers, chart_core_message, header_cell_f
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -897,10 +917,12 @@ def _create_line_chart(slide, df, headers, chart_core_message, header_cell_forma
             response_model=TablePivot
         ) if not MOCK_AI_API_CALLS else (
             TablePivot(
-                needsPivoting=False,
-                index="null",
-                columns="null",
-                values="null"
+                data_structure_analysis="",
+                long_format=False,
+                explain_pivot="",
+                index="",
+                columns="",
+                values=""
             )
         )
 
@@ -930,7 +952,7 @@ def _create_line_chart(slide, df, headers, chart_core_message, header_cell_forma
         response_model=LineOrClusteredColumnChartDataStructure
     ) if not MOCK_AI_API_CALLS else (
         LineOrClusteredColumnChartDataStructure(
-            category="Year",
+            category="Zeilenbeschriftungen",
             series=["USA", "China"],
             title="Some title"
         )
@@ -958,6 +980,8 @@ def _create_line_chart(slide, df, headers, chart_core_message, header_cell_forma
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = line_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -1026,6 +1050,8 @@ def _create_stacked_area_chart(slide, df, headers, chart_core_message, header_ce
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = line_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -1103,6 +1129,8 @@ def _create_100_percent_stacked_area_chart(slide, df, headers, chart_core_messag
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = line_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Chart legend
     chart.has_legend = True
@@ -1189,6 +1217,8 @@ def _create_bubble_chart(slide, df, headers, chart_core_message, header_cell_for
     slide.shapes.title.text = chart_core_message
     chart.has_title = True
     chart.chart_title.text_frame.text = bubble_chart_data_structure.title
+    chart.chart_title.text_frame.paragraphs[0].font.color.rgb = LABEL_COLOR
+    chart.chart_title.text_frame.paragraphs[0].font.bold = False
 
     # Gridlines
     value_axis = chart.value_axis
@@ -1464,7 +1494,7 @@ def create_chart(excel_bytes_content, chart_core_message, uuid):
     # selected_chart_type = SelectedChartType(
     #     reasonForSelectedChartType="some reason",
     #     chartType=ChartType.LINE,
-    #     lastLineIncludesSum=False
+    #     lastLineIncludesSum=True
     # )
 
     print(selected_chart_type.reasonForSelectedChartType)
