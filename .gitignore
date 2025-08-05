@@ -3,4 +3,6 @@
 /outputs/
 /inputs/
 /app/google-drive-api-key.json
+delete_google_drive_files.py
+share_google_drive_access.py
 /.vscode/
