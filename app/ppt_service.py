@@ -6,11 +6,11 @@ from typing import Optional
 import numpy as np
 from pptx import Presentation
 
-from app.chart_factory import create_clustered_column_chart, create_clustered_bar_chart, create_stacked_column_chart, \
+from chart_factory import create_clustered_column_chart, create_clustered_bar_chart, create_stacked_column_chart, \
     create_100_percent_stacked_column_chart, create_line_chart, create_column_chart, create_bar_chart, \
     create_pie_chart, create_doughnut_chart, create_bubble_chart, create_stacked_bar_chart
-from app.openai_adapter import _query_openai
-from app.prompt_factory import create_two_column_category_chart_data_selection_prompt, \
+from openai_adapter import _query_openai
+from prompt_factory import create_two_column_category_chart_data_selection_prompt, \
     create_multicolumn_category_chart_data_selection_prompt, \
     create_long_format_multicolumn_category_chart_data_selection_prompt, create_chart_selection_prompt, \
     create_bubble_chart_data_selection_prompt

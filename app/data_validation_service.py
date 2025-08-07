@@ -1,4 +1,4 @@
-from app.models import DataValidationResponse
+from models import DataValidationResponse
 
 
 def fun_validate(df) -> DataValidationResponse:
@@ -45,7 +45,8 @@ def fun_validate(df) -> DataValidationResponse:
     if inconsistent_columns:
         is_valid = False
         validation_hints.append(
-            f"The following columns are formatted inconsistently (e.g. contain text and numbers): {", ".join(inconsistent_columns)}")
+            f"The following columns are formatted inconsistently (e.g. contain text and numbers): "
+            f"{',' .join(inconsistent_columns)}")
 
     if not number_columns:
         is_valid = False

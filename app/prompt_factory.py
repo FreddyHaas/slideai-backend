@@ -2,7 +2,7 @@ from typing import List
 
 import pandas as pd
 
-from app.models import ChartType
+from models import ChartType
 
 
 def create_chart_selection_prompt(df, chart_options: List[ChartType], core_message: str, header_cell_formats) -> str:

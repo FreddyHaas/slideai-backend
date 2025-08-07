@@ -4,7 +4,7 @@ from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LEGEND_POSITION, XL_DATA_LABEL_POSITION
 from pptx.util import Pt
 
-from app.models import TwoColumnDataStructure, MultiColumnDataStructure, BubbleChartDataStructure, RoundingPrecision
+from models import TwoColumnDataStructure, MultiColumnDataStructure, BubbleChartDataStructure, RoundingPrecision
 
 AXIS_LABEL_COLOR = RGBColor(89, 89, 89)
 DARK_GREEN = RGBColor(3, 90, 65)

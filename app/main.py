@@ -15,8 +15,8 @@ from starlette.responses import FileResponse
 import ppt_service
 import aiofiles
 
-from app.data_validation_service import fun_validate
-from app.models import DataValidationRequest, PowerpointCreationResponse
+from data_validation_service import fun_validate
+from models import DataValidationRequest, PowerpointCreationResponse
 
 app = FastAPI()
 
