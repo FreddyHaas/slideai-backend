@@ -1,9 +1,9 @@
-Project
+## Project
 
 Convert Excel data into beautiful PowerPoint charts
 
 [VIEW DEMO HERE](https://slideai-demo.vercel.app/)
 
-Frontend
+## Frontend
 
 LINK TO FRONTEND (https://github.com/FreddyHaas/slideai-ui)
