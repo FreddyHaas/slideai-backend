@@ -6,4 +6,4 @@ Convert Excel data into beautiful PowerPoint charts
 
 ## Frontend
 
-LINK TO FRONTEND (https://github.com/FreddyHaas/slideai-ui)
+[LINK TO FRONTEND](https://github.com/FreddyHaas/slideai-ui)
